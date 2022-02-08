@@ -2,3 +2,5 @@
 'Plano inclinado 80'/c/__pycache__
 'Plano inclinado 80'/m/__pycache__
 'Plano inclinado 80'/v/__pycache__
+*.pyc
+Plano Inclinado 80/modelo_original.py
