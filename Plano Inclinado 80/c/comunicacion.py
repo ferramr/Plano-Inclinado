@@ -48,7 +48,7 @@ class Comunicacion:
         for p in ports:
             if "Arduino" in p.description:
                 print("Arduino p: ",p)
-            if "COM" in p.description:
+            if ("COM" in p.description) or ("UART" in p.description):
                 try:
                     serialConnection = serial.Serial(p[0],self.baudRate,timeout = 0)  # Instance serial object
                     print("")
