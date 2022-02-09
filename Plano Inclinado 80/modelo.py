@@ -39,13 +39,17 @@ from m.marcadores import Marcadores
 from m.esfera import Esfera
 from v.graficador import Graficador
 from v.display import Display
+# +++++++++++++++++++++++++++++++++++++++++++++++
+# erm_08-02-2021:
+from forms import ExperimentForm
+# +++++++++++++++++++++++++++++++++++++++++++++++
 
 # +++++++++++++++++++++++++++++++++++++++++++++++
 # erm_01-02-2021:
 # modulos para usar Flask
 from flask import Response
 from flask import Flask
-from flask import render_template
+from flask import render_template, request, redirect, url_for
 # modulos para usar hilos
 import threading
 import argparse
@@ -58,12 +62,14 @@ serialConnection = com.inicializar_comunicacion_serial()
 # erm_02-02-2020:
 outputFrame = None              # variable global que contiene la trama actual
 lock = threading.Lock()         # asegura que solo un hilo tenga acceso
+experimento_en_curso = False    # Experimento en curso (bloqueante)   
 # +++++++++++++++++++++++++++++++++++++++++++++++
 
 # +++++++++++++++++++++++++++++++++++++++++++++++
 # erm_01-02_2020
 # --- Inicializacion del objeto Flask ---
 app = Flask(__name__)
+app.config['SECRET_KEY'] = '7110c8ae51a4b5af97be6534caef90e4bb9bdcb3380af008f90b23a5d1616bf319bc298105da20f0'
 # +++++++++++++++++++++++++++++++++++++++++++++++
 
 # -----------------------------------------------------------------------
@@ -77,10 +83,21 @@ vs = cv2.VideoCapture(0)
 # --- Estructura de flujos para Flask ---
 # ---------------------------------------
 # Empezamos por la pagina principal
-@app.route("/")
+@app.route("/", methods=["GET", "POST"])
 def index():
+    global experimento_en_curso
+    form = ExperimentForm()
+    if form.validate_on_submit():
+        angulo = form.angulo.data
+        com.ecribir_comando_serial(serialConnection,angulo)
+        experimento_en_curso = True
+
+        next = request.args.get('next', None)
+        if next:
+            return redirect(next)
+        return redirect(url_for('index'))
 	# return the rendered template
-	return render_template("index.html")
+    return render_template("index.html", form=form, flag=experimento_en_curso)
 # +++++++++++++++++++++++++++++++++++++++++++++++
 
 def experimento():
@@ -147,11 +164,9 @@ def experimento():
 
     # --- Variables auxiliares ---
     sel = None                      # sel <- Seleccion del estado 
-    angulo_valido = True            # angulo <- 10 a 45 grados
-    experimento_en_curso = False    # Experimento en curso (bloqueante)
 
     # variables globales del buffer de video, la trama actual, y el candado
-    global vs, outputFrame, lock, com
+    global vs, outputFrame, lock, com, experimento_en_curso
 
     while True:
 
@@ -178,35 +193,35 @@ def experimento():
 
         info.mostrar_fecha_sistema(frame)
 
-        # -----------------------------------------------------------
-        # Recepcion de mensajes remotos por MQTT [angulo solicitado]
-        # -----------------------------------------------------------
-        if not(experimento_en_curso):
-            # --- Mensaje recibido por MQTT en el tema: python/rx [topic_sub] ---
-            msg = client_mqtt.msg_recibido
-            if msg != "":
-                # --- Comprueba que el angulo solicitado se encuentre ---
-                #               entre 5 y 45 grados
-                # --------------------------------------------------------
-                if int(msg) >= 5 and int(msg) <= 45:
-                    # --- Enviar angulo solicitado a ARDUINO ---
-                    com.ecribir_comando_serial(serialConnection,msg)
-                    angulo_valido = True
-                    # --- Bandera de "experimento en curso" ---
-                    experimento_en_curso = True
-                else:
-                    # --- El angulo se encuentra fuera de rango ---
-                    msg = "Angulo fuera de rango: [10, 45]"
-                    client_mqtt.publish(client,msg,topic_pub)
-                    angulo_valido = False
-                    # --- Libera bandera de "experimento en curso" ---
-                    experimento_en_curso = False
-                # --- Limpia campo de mensaje de "topic_sub" ---
-                msg = ""
-                client_mqtt.publish(client,msg,topic_sub)
-                continue
+#        # -----------------------------------------------------------
+#        # Recepcion de mensajes remotos por MQTT [angulo solicitado]
+#        # -----------------------------------------------------------
+#        if not(experimento_en_curso):
+#            # --- Mensaje recibido por MQTT en el tema: python/rx [topic_sub] ---
+#            msg = client_mqtt.msg_recibido
+#            if msg != "":
+#                # --- Comprueba que el angulo solicitado se encuentre ---
+#                #               entre 5 y 45 grados
+#                # --------------------------------------------------------
+#                if int(msg) >= 5 and int(msg) <= 45:
+#                    # --- Enviar angulo solicitado a ARDUINO ---
+#                    com.ecribir_comando_serial(serialConnection,msg)
+#                    angulo_valido = True
+#                    # --- Bandera de "experimento en curso" ---
+#                    experimento_en_curso = True
+#                else:
+#                    # --- El angulo se encuentra fuera de rango ---
+#                    msg = "Angulo fuera de rango: [10, 45]"
+#                    client_mqtt.publish(client,msg,topic_pub)
+#                    angulo_valido = False
+#                    # --- Libera bandera de "experimento en curso" ---
+#                    experimento_en_curso = False
+#                # --- Limpia campo de mensaje de "topic_sub" ---
+#                msg = ""
+#                client_mqtt.publish(client,msg,topic_sub)
+#                continue
 
-        if angulo_valido:
+        if experimento_en_curso:
             # ----------------------------------
             # Lectura de comandos recibidos
             # desde arduino
@@ -270,7 +285,7 @@ def experimento():
                     dsp.convertir_informacion_json()
                     msg = dsp.ijson
                     client_mqtt.publish(client,msg,topic_pub)
-                    # --- Libera bandera de "experimento en curso" ---
+                    # --- Libera bandera de "experimento_en_curso" ---
                     experimento_en_curso = False
 
                 # --- Dibujo de plano inclinado ---
